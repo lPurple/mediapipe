@@ -43,7 +43,8 @@ SUBDIR_INIT_PY_FILES = [
     os.path.join(MP_ROOT_PATH, 'mediapipe/calculators/__init__.py'),
     os.path.join(MP_ROOT_PATH, 'mediapipe/modules/__init__.py'),
     os.path.join(MP_ROOT_PATH,
-                 'mediapipe/modules/holistic_landmark/__init__.py')
+                 'mediapipe/modules/holistic_landmark/__init__.py'),
+    os.path.join(MP_ROOT_PATH, 'mediapipe/modules/objectron/__init__.py')
 ]
 if not os.path.exists(ROOT_INIT_PY):
   open(ROOT_INIT_PY, 'w').close()
@@ -179,13 +180,13 @@ class GeneratePyProtos(setuptools.Command):
         'mediapipe/util/**/*.proto'
     ]:
       for proto_file in glob.glob(pattern, recursive=True):
+        proto_dir = os.path.dirname(os.path.abspath(proto_file))
         # Ignore test protos.
         if proto_file.endswith('test.proto'):
           continue
-        # Ignore tensorflow protos.
-        if 'tensorflow' in proto_file:
+        # Ignore tensorflow protos in mediapipe/calculators/tensorflow.
+        if 'tensorflow' in proto_dir:
           continue
-        proto_dir = os.path.dirname(os.path.abspath(proto_file))
         # Ignore testdata dir.
         if proto_dir.endswith('testdata'):
           continue
@@ -219,9 +220,10 @@ class BuildBinaryGraphs(build.build):
   def run(self):
     _check_bazel()
     binary_graphs = [
+        'face_detection/face_detection_front_cpu',
         'face_landmark/face_landmark_front_cpu',
         'hand_landmark/hand_landmark_tracking_cpu',
-        'holistic_landmark/holistic_landmark_cpu',
+        'holistic_landmark/holistic_landmark_cpu', 'objectron/objectron_cpu',
         'pose_landmark/pose_landmark_cpu'
     ]
     for binary_graph in binary_graphs:
