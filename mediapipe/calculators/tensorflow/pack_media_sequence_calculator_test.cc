@@ -29,6 +29,7 @@
 #include "mediapipe/framework/port/gtest.h"
 #include "mediapipe/framework/port/opencv_imgcodecs_inc.h"
 #include "mediapipe/framework/port/status_matchers.h"
+#include "mediapipe/framework/timestamp.h"
 #include "mediapipe/util/sequence/media_sequence.h"
 #include "tensorflow/core/example/example.pb.h"
 #include "tensorflow/core/example/feature.pb.h"
@@ -39,12 +40,31 @@ namespace {
 namespace tf = ::tensorflow;
 namespace mpms = mediapipe::mediasequence;
 
+constexpr char kBboxTag[] = "BBOX";
+constexpr char kEncodedMediaStartTimestampTag[] =
+    "ENCODED_MEDIA_START_TIMESTAMP";
+constexpr char kEncodedMediaTag[] = "ENCODED_MEDIA";
+constexpr char kClassSegmentationTag[] = "CLASS_SEGMENTATION";
+constexpr char kKeypointsTestTag[] = "KEYPOINTS_TEST";
+constexpr char kBboxPredictedTag[] = "BBOX_PREDICTED";
+constexpr char kAudioOtherTag[] = "AUDIO_OTHER";
+constexpr char kAudioTestTag[] = "AUDIO_TEST";
+constexpr char kForwardFlowEncodedTag[] = "FORWARD_FLOW_ENCODED";
+constexpr char kFloatContextFeatureOtherTag[] = "FLOAT_CONTEXT_FEATURE_OTHER";
+constexpr char kFloatContextFeatureTestTag[] = "FLOAT_CONTEXT_FEATURE_TEST";
+constexpr char kFloatFeatureOtherTag[] = "FLOAT_FEATURE_OTHER";
+constexpr char kFloatFeatureTestTag[] = "FLOAT_FEATURE_TEST";
+constexpr char kImagePrefixTag[] = "IMAGE_PREFIX";
+constexpr char kSequenceExampleTag[] = "SEQUENCE_EXAMPLE";
+constexpr char kImageTag[] = "IMAGE";
+
 class PackMediaSequenceCalculatorTest : public ::testing::Test {
  protected:
   void SetUpCalculator(const std::vector<std::string>& input_streams,
                        const tf::Features& features,
-                       bool output_only_if_all_present,
-                       bool replace_instead_of_append) {
+                       const bool output_only_if_all_present,
+                       const bool replace_instead_of_append,
+                       const bool output_as_zero_timestamp = false) {
     CalculatorGraphConfig::Node config;
     config.set_calculator("PackMediaSequenceCalculator");
     config.add_input_side_packet("SEQUENCE_EXAMPLE:input_sequence");
@@ -57,6 +77,7 @@ class PackMediaSequenceCalculatorTest : public ::testing::Test {
     *options->mutable_context_feature_map() = features;
     options->set_output_only_if_all_present(output_only_if_all_present);
     options->set_replace_data_instead_of_append(replace_instead_of_append);
+    options->set_output_as_zero_timestamp(output_as_zero_timestamp);
     runner_ = ::absl::make_unique<CalculatorRunner>(config);
   }
 
@@ -80,17 +101,17 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoImages) {
   for (int i = 0; i < num_images; ++i) {
     auto image_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_image);
-    runner_->MutableInputs()->Tag("IMAGE").packets.push_back(
+    runner_->MutableInputs()->Tag(kImageTag).packets.push_back(
         Adopt(image_ptr.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -124,17 +145,17 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoPrefixedImages) {
     auto image_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_image);
     runner_->MutableInputs()
-        ->Tag("IMAGE_PREFIX")
+        ->Tag(kImagePrefixTag)
         .packets.push_back(Adopt(image_ptr.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -158,21 +179,21 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoFloatLists) {
   for (int i = 0; i < num_timesteps; ++i) {
     auto vf_ptr = ::absl::make_unique<std::vector<float>>(2, 2 << i);
     runner_->MutableInputs()
-        ->Tag("FLOAT_FEATURE_TEST")
+        ->Tag(kFloatFeatureTestTag)
         .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp(i)));
     vf_ptr = ::absl::make_unique<std::vector<float>>(2, 2 << i);
     runner_->MutableInputs()
-        ->Tag("FLOAT_FEATURE_OTHER")
+        ->Tag(kFloatFeatureOtherTag)
         .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -194,20 +215,17 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoFloatLists) {
   }
 }
 
-TEST_F(PackMediaSequenceCalculatorTest, PacksTwoContextFloatLists) {
-  SetUpCalculator(
-      {"FLOAT_CONTEXT_FEATURE_TEST:test", "FLOAT_CONTEXT_FEATURE_OTHER:test2"},
-      {}, false, true);
-  auto input_sequence = absl::make_unique<tf::SequenceExample>();
+TEST_F(PackMediaSequenceCalculatorTest, OutputAsZeroTimestamp) {
+  SetUpCalculator({"FLOAT_FEATURE_TEST:test"}, {}, false, true, true);
+  auto input_sequence = ::absl::make_unique<tf::SequenceExample>();
 
-  auto vf_ptr = absl::make_unique<std::vector<float>>(2, 3);
-  runner_->MutableInputs()
-      ->Tag("FLOAT_CONTEXT_FEATURE_TEST")
-      .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp::PostStream()));
-  vf_ptr = absl::make_unique<std::vector<float>>(2, 4);
-  runner_->MutableInputs()
-      ->Tag("FLOAT_CONTEXT_FEATURE_OTHER")
-      .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp::PostStream()));
+  int num_timesteps = 2;
+  for (int i = 0; i < num_timesteps; ++i) {
+    auto vf_ptr = ::absl::make_unique<std::vector<float>>(2, 2 << i);
+    runner_->MutableInputs()
+        ->Tag("FLOAT_FEATURE_TEST")
+        .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp(i)));
+  }
 
   runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
       Adopt(input_sequence.release());
@@ -216,6 +234,32 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoContextFloatLists) {
 
   const std::vector<Packet>& output_packets =
       runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+  ASSERT_EQ(1, output_packets.size());
+  EXPECT_EQ(output_packets[0].Timestamp().Value(), 0ll);
+}
+
+TEST_F(PackMediaSequenceCalculatorTest, PacksTwoContextFloatLists) {
+  SetUpCalculator(
+      {"FLOAT_CONTEXT_FEATURE_TEST:test", "FLOAT_CONTEXT_FEATURE_OTHER:test2"},
+      {}, false, true);
+  auto input_sequence = absl::make_unique<tf::SequenceExample>();
+
+  auto vf_ptr = absl::make_unique<std::vector<float>>(2, 3);
+  runner_->MutableInputs()
+      ->Tag(kFloatContextFeatureTestTag)
+      .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp::PostStream()));
+  vf_ptr = absl::make_unique<std::vector<float>>(2, 4);
+  runner_->MutableInputs()
+      ->Tag(kFloatContextFeatureOtherTag)
+      .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp::PostStream()));
+
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
+      Adopt(input_sequence.release());
+
+  MP_ASSERT_OK(runner_->Run());
+
+  const std::vector<Packet>& output_packets =
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -233,7 +277,7 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksAdditionalContext) {
   SetUpCalculator({"IMAGE:images"}, context, false, true);
 
   auto input_sequence = ::absl::make_unique<tf::SequenceExample>();
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
   cv::Mat image(2, 3, CV_8UC3, cv::Scalar(0, 0, 255));
   std::vector<uchar> bytes;
@@ -242,13 +286,13 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksAdditionalContext) {
   encoded_image.set_encoded_image(bytes.data(), bytes.size());
   auto image_ptr =
       ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_image);
-  runner_->MutableInputs()->Tag("IMAGE").packets.push_back(
+  runner_->MutableInputs()->Tag(kImageTag).packets.push_back(
       Adopt(image_ptr.release()).At(Timestamp(0)));
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -281,17 +325,17 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoForwardFlowEncodeds) {
     auto flow_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_flow);
     runner_->MutableInputs()
-        ->Tag("FORWARD_FLOW_ENCODED")
+        ->Tag(kForwardFlowEncodedTag)
         .packets.push_back(Adopt(flow_ptr.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -345,17 +389,17 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoBBoxDetections) {
     detections->push_back(detection);
 
     runner_->MutableInputs()
-        ->Tag("BBOX_PREDICTED")
+        ->Tag(kBboxPredictedTag)
         .packets.push_back(Adopt(detections.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -424,11 +468,11 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksBBoxWithoutImageDims) {
     detections->push_back(detection);
 
     runner_->MutableInputs()
-        ->Tag("BBOX_PREDICTED")
+        ->Tag(kBboxPredictedTag)
         .packets.push_back(Adopt(detections.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   auto status = runner_->Run();
@@ -472,7 +516,7 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksBBoxWithImages) {
     detections->push_back(detection);
 
     runner_->MutableInputs()
-        ->Tag("BBOX_PREDICTED")
+        ->Tag(kBboxPredictedTag)
         .packets.push_back(Adopt(detections.release()).At(Timestamp(i)));
   }
   cv::Mat image(height, width, CV_8UC3, cv::Scalar(0, 0, 255));
@@ -487,16 +531,16 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksBBoxWithImages) {
   for (int i = 0; i < num_images; ++i) {
     auto image_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_image);
-    runner_->MutableInputs()->Tag("IMAGE").packets.push_back(
+    runner_->MutableInputs()->Tag(kImageTag).packets.push_back(
         Adopt(image_ptr.release()).At(Timestamp(i)));
   }
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -538,18 +582,18 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoKeypoints) {
   absl::flat_hash_map<std::string, std::vector<std::pair<float, float>>>
       points = {{"HEAD", {{0.1, 0.2}, {0.3, 0.4}}}, {"TAIL", {{0.5, 0.6}}}};
   runner_->MutableInputs()
-      ->Tag("KEYPOINTS_TEST")
+      ->Tag(kKeypointsTestTag)
       .packets.push_back(PointToForeign(&points).At(Timestamp(0)));
   runner_->MutableInputs()
-      ->Tag("KEYPOINTS_TEST")
+      ->Tag(kKeypointsTestTag)
       .packets.push_back(PointToForeign(&points).At(Timestamp(1)));
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -589,17 +633,17 @@ TEST_F(PackMediaSequenceCalculatorTest, PacksTwoMaskDetections) {
     detections->push_back(detection);
 
     runner_->MutableInputs()
-        ->Tag("CLASS_SEGMENTATION")
+        ->Tag(kClassSegmentationTag)
         .packets.push_back(Adopt(detections.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -638,17 +682,17 @@ TEST_F(PackMediaSequenceCalculatorTest, MissingStreamOK) {
     auto flow_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_flow);
     runner_->MutableInputs()
-        ->Tag("FORWARD_FLOW_ENCODED")
+        ->Tag(kForwardFlowEncodedTag)
         .packets.push_back(Adopt(flow_ptr.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -684,11 +728,11 @@ TEST_F(PackMediaSequenceCalculatorTest, MissingStreamNotOK) {
     auto flow_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_flow);
     runner_->MutableInputs()
-        ->Tag("FORWARD_FLOW_ENCODED")
+        ->Tag(kForwardFlowEncodedTag)
         .packets.push_back(Adopt(flow_ptr.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   absl::Status status = runner_->Run();
@@ -705,13 +749,13 @@ TEST_F(PackMediaSequenceCalculatorTest, TestReplacingImages) {
   mpms::AddImageTimestamp(1, input_sequence.get());
   mpms::AddImageTimestamp(2, input_sequence.get());
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -731,13 +775,13 @@ TEST_F(PackMediaSequenceCalculatorTest, TestReplacingFlowImages) {
   mpms::AddForwardFlowTimestamp(1, input_sequence.get());
   mpms::AddForwardFlowTimestamp(2, input_sequence.get());
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -768,13 +812,13 @@ TEST_F(PackMediaSequenceCalculatorTest, TestReplacingFloatVectors) {
             mpms::GetFeatureTimestampSize("OTHER", *input_sequence));
   ASSERT_EQ(num_timesteps,
             mpms::GetFeatureFloatsSize("OTHER", *input_sequence));
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
 
   MP_ASSERT_OK(runner_->Run());
 
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -800,7 +844,7 @@ TEST_F(PackMediaSequenceCalculatorTest, TestReconcilingAnnotations) {
   for (int i = 0; i < num_images; ++i) {
     auto image_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_image);
-    runner_->MutableInputs()->Tag("IMAGE").packets.push_back(
+    runner_->MutableInputs()->Tag(kImageTag).packets.push_back(
         Adopt(image_ptr.release()).At(Timestamp((i + 1) * 10)));
   }
 
@@ -812,11 +856,11 @@ TEST_F(PackMediaSequenceCalculatorTest, TestReconcilingAnnotations) {
   mpms::AddBBoxTimestamp("PREFIX", 9, input_sequence.get());
   mpms::AddBBoxTimestamp("PREFIX", 22, input_sequence.get());
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
   MP_ASSERT_OK(runner_->Run());
   const std::vector<Packet>& output_packets =
-      runner_->Outputs().Tag("SEQUENCE_EXAMPLE").packets;
+      runner_->Outputs().Tag(kSequenceExampleTag).packets;
   ASSERT_EQ(1, output_packets.size());
   const tf::SequenceExample& output_sequence =
       output_packets[0].Get<tf::SequenceExample>();
@@ -853,7 +897,7 @@ TEST_F(PackMediaSequenceCalculatorTest, TestOverwritingAndReconciling) {
   for (int i = 0; i < num_images; ++i) {
     auto image_ptr =
         ::absl::make_unique<OpenCvImageEncoderCalculatorResults>(encoded_image);
-    runner_->MutableInputs()->Tag("IMAGE").packets.push_back(
+    runner_->MutableInputs()->Tag(kImageTag).packets.push_back(
         Adopt(image_ptr.release()).At(Timestamp(i)));
   }
 
@@ -867,7 +911,7 @@ TEST_F(PackMediaSequenceCalculatorTest, TestOverwritingAndReconciling) {
     Location::CreateRelativeBBoxLocation(0, 0.5, 0.5, 0.5)
         .ConvertToProto(detection.mutable_location_data());
     detections->push_back(detection);
-    runner_->MutableInputs()->Tag("BBOX").packets.push_back(
+    runner_->MutableInputs()->Tag(kBboxTag).packets.push_back(
         Adopt(detections.release()).At(Timestamp(i)));
   }
 
@@ -883,7 +927,7 @@ TEST_F(PackMediaSequenceCalculatorTest, TestOverwritingAndReconciling) {
     mpms::AddBBoxTrackIndex({-1}, input_sequence.get());
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
   // If the all the previous values aren't cleared, this assert will fail.
   MP_ASSERT_OK(runner_->Run());
@@ -899,11 +943,11 @@ TEST_F(PackMediaSequenceCalculatorTest, TestTooLargeInputFailsSoftly) {
   for (int i = 0; i < num_timesteps; ++i) {
     auto vf_ptr = ::absl::make_unique<std::vector<float>>(1000000, i);
     runner_->MutableInputs()
-        ->Tag("FLOAT_FEATURE_TEST")
+        ->Tag(kFloatFeatureTestTag)
         .packets.push_back(Adopt(vf_ptr.release()).At(Timestamp(i)));
   }
 
-  runner_->MutableSidePackets()->Tag("SEQUENCE_EXAMPLE") =
+  runner_->MutableSidePackets()->Tag(kSequenceExampleTag) =
       Adopt(input_sequence.release());
   ASSERT_FALSE(runner_->Run().ok());
 }
