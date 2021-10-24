@@ -18,12 +18,14 @@ android_library(
     name = "facemesh",
     srcs = [
         "FaceMesh.java",
+        "FaceMeshConnections.java",
         "FaceMeshOptions.java",
         "FaceMeshResult.java",
     ],
     assets = [
         "//mediapipe/modules/face_detection:face_detection_short_range.tflite",
         "//mediapipe/modules/face_landmark:face_landmark.tflite",
+        "//mediapipe/modules/face_landmark:face_landmark_with_attention.tflite",
         "//mediapipe/modules/face_landmark:face_landmark_front_cpu_image.binarypb",
         "//mediapipe/modules/face_landmark:face_landmark_front_gpu_image.binarypb",
     ],

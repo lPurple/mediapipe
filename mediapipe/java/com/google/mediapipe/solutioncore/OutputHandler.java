@@ -33,6 +33,8 @@ public class OutputHandler<T extends SolutionResult> {
   private ResultListener<T> customResultListener;
   // The user-defined error listener.
   private ErrorListener customErrorListener;
+  // Whether the output handler should react to timestamp-bound changes by outputting empty packets.
+  private boolean handleTimestampBoundChanges = false;
 
   /**
    * Sets a callback to be invoked to convert a packet list to a solution result object.
@@ -61,6 +63,20 @@ public class OutputHandler<T extends SolutionResult> {
     this.customErrorListener = listener;
   }
 
+  /**
+   * Sets whether the output handler should react to timestamp-bound changes by outputting empty
+   * packets.
+   *
+   * @param handleTimestampBoundChanges a boolean value.
+   */
+  public void setHandleTimestampBoundChanges(boolean handleTimestampBoundChanges) {
+    this.handleTimestampBoundChanges = handleTimestampBoundChanges;
+  }
+
+  public boolean handleTimestampBoundChanges() {
+    return handleTimestampBoundChanges;
+  }
+
   /** Handles a list of output packets. Invoked when packet lists become available. */
   public void run(List<Packet> packets) {
     T solutionResult = null;
@@ -79,7 +95,7 @@ public class OutputHandler<T extends SolutionResult> {
       }
       if (solutionResult instanceof ImageSolutionResult) {
         ImageSolutionResult imageSolutionResult = (ImageSolutionResult) solutionResult;
-        imageSolutionResult.releaseImagePacket();
+        imageSolutionResult.releaseImagePackets();
       }
     }
   }

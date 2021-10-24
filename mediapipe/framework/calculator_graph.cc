@@ -427,7 +427,8 @@ absl::Status CalculatorGraph::Initialize(
     const std::map<std::string, Packet>& side_packets) {
   auto validated_graph = absl::make_unique<ValidatedGraphConfig>();
   MP_RETURN_IF_ERROR(validated_graph->Initialize(
-      input_config, /*graph_registry=*/nullptr, &service_manager_));
+      input_config, /*graph_registry=*/nullptr, /*graph_options=*/nullptr,
+      &service_manager_));
   return Initialize(std::move(validated_graph), side_packets);
 }
 
@@ -465,7 +466,7 @@ absl::Status CalculatorGraph::ObserveOutputStream(
 }
 
 absl::StatusOr<OutputStreamPoller> CalculatorGraph::AddOutputStreamPoller(
-    const std::string& stream_name) {
+    const std::string& stream_name, bool observe_timestamp_bounds) {
   RET_CHECK(initialized_).SetNoLogging()
       << "CalculatorGraph is not initialized.";
   int output_stream_index = validated_graph_->OutputStreamIndex(stream_name);
@@ -479,7 +480,7 @@ absl::StatusOr<OutputStreamPoller> CalculatorGraph::AddOutputStreamPoller(
       stream_name, &any_packet_type_,
       std::bind(&CalculatorGraph::UpdateThrottledNodes, this,
                 std::placeholders::_1, std::placeholders::_2),
-      &output_stream_managers_[output_stream_index]));
+      &output_stream_managers_[output_stream_index], observe_timestamp_bounds));
   OutputStreamPoller poller(internal_poller);
   graph_output_streams_.push_back(std::move(internal_poller));
   return std::move(poller);

@@ -338,11 +338,10 @@ with mp_objectron.Objectron(static_image_mode=False,
       # If loading a video, use 'break' instead of 'continue'.
       continue
 
-    # Convert the BGR image to RGB.
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     # To improve performance, optionally mark the image as not writeable to
     # pass by reference.
     image.flags.writeable = False
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     results = objectron.process(image)
 
     # Draw the box landmarks on the image.
@@ -354,7 +353,8 @@ with mp_objectron.Objectron(static_image_mode=False,
               image, detected_object.landmarks_2d, mp_objectron.BOX_CONNECTIONS)
             mp_drawing.draw_axis(image, detected_object.rotation,
                                  detected_object.translation)
-    cv2.imshow('MediaPipe Objectron', image)
+    # Flip the image horizontally for a selfie-view display.
+    cv2.imshow('MediaPipe Objectron', cv2.flip(image, 1))
     if cv2.waitKey(5) & 0xFF == 27:
       break
 cap.release()
@@ -529,7 +529,7 @@ Example app bounding boxes are rendered with [GlAnimationOverlayCalculator](http
 > ```
 > and then run
 >
-> ```build
+> ```bash
 > bazel run -c opt mediapipe/graphs/object_detection_3d/obj_parser:ObjParser -- input_dir=[INTERMEDIATE_OUTPUT_DIR] output_dir=[OUTPUT_DIR]
 > ```
 > INPUT_DIR should be the folder with initial asset .obj files to be processed,

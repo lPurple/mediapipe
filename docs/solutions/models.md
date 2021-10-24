@@ -41,7 +41,10 @@ one over the other.
 *   Face landmark model:
     [TFLite model](https://github.com/google/mediapipe/tree/master/mediapipe/modules/face_landmark/face_landmark.tflite),
     [TF.js model](https://tfhub.dev/mediapipe/facemesh/1)
-*   [Model card](https://mediapipe.page.link/facemesh-mc)
+*   Face landmark model w/ attention (aka Attention Mesh):
+    [TFLite model](https://github.com/google/mediapipe/tree/master/mediapipe/modules/face_landmark/face_landmark_with_attention.tflite)
+*   [Model card](https://mediapipe.page.link/facemesh-mc),
+    [Model card (w/ attention)](https://mediapipe.page.link/attentionmesh-mc)
 
 ### [Iris](https://google.github.io/mediapipe/solutions/iris)
 
@@ -55,10 +58,12 @@ one over the other.
     [TFLite model](https://github.com/google/mediapipe/tree/master/mediapipe/modules/palm_detection/palm_detection.tflite),
     [TF.js model](https://tfhub.dev/mediapipe/handdetector/1)
 *   Hand landmark model:
-    [TFLite model](https://github.com/google/mediapipe/tree/master/mediapipe/modules/hand_landmark/hand_landmark.tflite),
+    [TFLite model (lite)](https://github.com/google/mediapipe/tree/master/mediapipe/modules/hand_landmark/hand_landmark_lite.tflite),
+    [TFLite model (full)](https://github.com/google/mediapipe/tree/master/mediapipe/modules/hand_landmark/hand_landmark_full.tflite),
     [TFLite model (sparse)](https://github.com/google/mediapipe/tree/master/mediapipe/modules/hand_landmark/hand_landmark_sparse.tflite),
     [TF.js model](https://tfhub.dev/mediapipe/handskeleton/1)
-*   [Model card](https://mediapipe.page.link/handmc), [Model card (sparse)](https://mediapipe.page.link/handmc-sparse)
+*   [Model card](https://mediapipe.page.link/handmc),
+    [Model card (sparse)](https://mediapipe.page.link/handmc-sparse)
 
 ### [Pose](https://google.github.io/mediapipe/solutions/pose)
 
